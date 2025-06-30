@@ -1,0 +1,988 @@
+<script>
+  let dataWebflow;
+  //0. WEBFLOW - GET user data
+  window.sa5 = window.sa5 || [];
+  window.sa5.push([
+    "userInfoChanged",
+    (user) => {
+      // Check to verify the custom field data is loaded
+      if (user.user_data_loaded.custom_fields) {
+        //0. INITIALIZE process with airtable ID
+        dataWebflow = user;
+        //console.log("1. START - dataWebflow: ",dataWebflow);
+
+        //4.1 AIRTABLE LOAN_REQUESTS - GET array with loan_requests data
+        const getLoanRequestsInfo = async (loan_requests_IDs) => {
+          let arrayLoanRequests = [];
+          for (let index = 0; index < loan_requests_IDs.length; index++) {
+            const Id = loan_requests_IDs[index];
+            const baseUrl = `https://api.airtable.com/v0/appGumyin5Xb5JkXR/loan_requests/${Id}`;
+            const res = await fetch(baseUrl, {
+              method: "GET",
+              headers: {
+                Authorization:
+                  "Bearer patI5e432yDWTmpLq.31b1b77d953e29d548caf28995864ae95b5b67a1eff7d18b6882c019bb01ae95",
+                "Content-Type": "application/json",
+              },
+            });
+            const response = await res.json();
+            arrayLoanRequests.push(response);
+          }
+          //Order newest to oldest
+          arrayLoanRequests.sort(function (a, b) {
+            return new Date(b.createdTime) - new Date(a.createdTime);
+          });
+          return arrayLoanRequests;
+        };
+
+        //4.2 AIRTABLE LOANS - GET array with loans data
+        const getLoansInfo = async (loans_ID) => {
+          let arrayLoans = [];
+          for (let index = 0; index < loans_ID.length; index++) {
+            const Id = loans_ID[index];
+            const baseUrl = `https://api.airtable.com/v0/appGumyin5Xb5JkXR/loans/${Id}`;
+            const res = await fetch(baseUrl, {
+              method: "GET",
+              headers: {
+                Authorization:
+                  "Bearer patI5e432yDWTmpLq.31b1b77d953e29d548caf28995864ae95b5b67a1eff7d18b6882c019bb01ae95",
+                "Content-Type": "application/json",
+              },
+            });
+            const response = await res.json();
+            arrayLoans.push(response);
+          }
+          //Order newest to oldest
+          arrayLoans.sort(function (a, b) {
+            return new Date(b.createdTime) - new Date(a.createdTime);
+          });
+          return arrayLoans;
+        };
+
+        //4.3 AIRTABLE PAYMENTS - GET array with payments data
+        const getPaymentsInfo = async (loans) => {
+          let arrayPayments = [];
+          for (let index1 = 0; index1 < loans.length; index1++) {
+            //Second FOR to get every payment for each loan
+            for (
+              let index2 = 0;
+              index2 < loans[index1].fields.payments_count_total;
+              index2++
+            ) {
+              const Id = loans[index1].fields.payments[index2];
+              const baseUrl = `https://api.airtable.com/v0/appGumyin5Xb5JkXR/payments/${Id}`;
+              const res = await fetch(baseUrl, {
+                method: "GET",
+                headers: {
+                  Authorization:
+                    "Bearer patI5e432yDWTmpLq.31b1b77d953e29d548caf28995864ae95b5b67a1eff7d18b6882c019bb01ae95",
+                  "Content-Type": "application/json",
+                },
+              });
+              const response = await res.json();
+              arrayPayments.push(response);
+            }
+          }
+          //Order newest to oldest
+          arrayPayments.sort(function (a, b) {
+            return new Date(b.createdTime) - new Date(a.createdTime);
+          });
+          return arrayPayments;
+        };
+
+        //v1.18 TASA BCV:
+        const getTasaBCV = async () => {
+          let tasaBCV = 0;
+          //console.log('Before - Tasa BCV:',tasaBCV);
+          const baseUrl = `https://api.quoota.com/v1/currencies/usd`;
+          //const baseUrl = `https://us-central1-quoota-dev.cloudfunctions.net/api_dev/payments/bcv`
+          const res = await fetch(baseUrl, {
+            method: "GET",
+          });
+          const response = await res.json();
+          tasaBCV = response;
+          console.log("In progress - Tasa BCV:", tasaBCV);
+          //console.log('función RESPONSE:',tasaBCV);
+          //console.log('función TASA:',tasaBCV.data.rate);
+          return tasaBCV.data.rate;
+          //return tasaBCV.data.dolar;
+        };
+
+        //2. AIRTABLE - GET employee data:
+        const getInfo = async (employeeID) => {
+          let dataAirtable = [];
+          const baseUrl = `https://api.airtable.com/v0/appGumyin5Xb5JkXR/employees/${employeeID}`;
+          const res = await fetch(baseUrl, {
+            method: "GET",
+            headers: {
+              Authorization:
+                "Bearer patI5e432yDWTmpLq.31b1b77d953e29d548caf28995864ae95b5b67a1eff7d18b6882c019bb01ae95",
+              "Content-Type": "application/json",
+            },
+          });
+          dataAirtable = await res.json();
+          //console.log('2. Airtable getInfo - dataAirtable: ',dataAirtable);
+
+          //Validación de estatus inactivo
+          if (
+            dataAirtable.fields.status == "Active" &&
+            dataAirtable.fields.company_status[0] == "Active"
+          ) {
+            document.getElementById("status_active").style.display = "block";
+            document.getElementById("status_inactive").style.display = "none";
+          }
+          if (dataAirtable.fields.status == "Restricted") {
+            document.getElementById("status_active").style.display = "block";
+            document.getElementById("status_inactive").style.display = "none";
+          }
+          if (
+            dataAirtable.fields.status != "Active" ||
+            dataAirtable.fields.company_status[0] != "Active"
+          ) {
+            document.getElementById("status_active").style.display = "none";
+            document.getElementById("status_inactive").style.display = "block";
+          }
+
+          //3. PAGE DASHBOARD (PASTE DATA) - View data on page's front-end:
+          //---> $('#balance').html(dataAirtable.fields.balance);
+          //---> $('#loans_count_total').html(dataAirtable.fields.loans_count_total);
+          //---> $('#loans_count_requests').html(dataAirtable.fields.loans_count_requests);
+          //---> $('#loans_count_active').html(dataAirtable.fields.loans_count_active);
+          //---> $('#loans_count_finished').html(dataAirtable.fields.loans_count_finished);
+
+          //Funciones para redondear
+          function round(x) {
+            return (Math.round(x * 100) / 100).toFixed(0);
+          }
+          function roundTwo(x) {
+            return (Math.round(x * 100) / 100).toFixed(2);
+          }
+          function formatNumber(number) {
+            return number.toString().replace(/\\B(?=(\\d{3})+(?!\\d))/g, ".");
+          }
+
+          //4. LOANS & LOAN_REQUESTS - GET transacctions data:
+          let loan_requests_IDs = dataAirtable.fields.loan_requests;
+          let loans_IDs = dataAirtable.fields.loans;
+          //console.log('4.1 loan_requests_ID: ',loan_requests_IDs);
+          //console.log('4.2 loans_ID: ',loans_IDs);
+
+          //4.1. LOANS REQUESTS - Function to get data:
+          if (loan_requests_IDs != null) {
+            const loan_requests = await getLoanRequestsInfo(loan_requests_IDs);
+            //console.log('4.3 loan_requests data: ',loan_requests);
+          }
+
+          if (loans_IDs != null) {
+            //4.2. LOANS - Function to get data:
+            const loans = await getLoansInfo(loans_IDs);
+            //console.log('4.4 loans data: ',loans);
+
+            //4.3. PAYMENTS - Function to get data:
+            const payments = await getPaymentsInfo(loans);
+            //console.log('4.5 payments data: ',payments);
+            payments.sort(function (a, b) {
+              return new Date(a.fields.deadline) - new Date(b.fields.deadline);
+            });
+            //console.log('Payments sorted: ',payments);
+
+            //5. RECENT TRANSACCIONTS - Concat Loans & Payments:
+            const recent_transactions = [].concat(loans, payments);
+            recent_transactions.sort(function (a, b) {
+              return new Date(b.createdTime) - new Date(a.createdTime);
+            });
+            //console.log('5. recent_transaccions data',recent_transactions);
+
+            //6. NOW DO SOMETHING WITH ALL YOUR DATA
+            //PAGOS PAGE with data
+            document.getElementById("loading_payments").style.display = "none";
+            document.getElementById("empty_payments").style.display = "none";
+            document.getElementById("list_payments").style.display = "flex";
+            var table_recents = document.getElementById("table_payments");
+
+            //FALTA: --------------------------------------------------------------------------------------------------
+            // Condicionales para mostrar el botón de pago o no.
+
+            //POBLAR TABLA DE PAGOS
+            for (
+              let indexRowPayments = 0;
+              indexRowPayments < payments.length;
+              indexRowPayments++
+            ) {
+              //if (indexRowRecents === 4) { break; }; //No max needed here
+              var newRow = table_recents.insertRow(indexRowPayments + 1);
+              newRow.className = "table_row_long";
+              var cell1 = newRow.insertCell(0);
+              cell1.innerHTML = payments[indexRowPayments].fields.name;
+              cell1.className = "table_cell_5rows full";
+              var cell2 = newRow.insertCell(1);
+              cell2.innerHTML = payments[indexRowPayments].fields.date_formated;
+              cell2.className = "table_cell_5rows date";
+              var cell3 = newRow.insertCell(2);
+              cell3.innerHTML = `$${roundTwo(
+                payments[indexRowPayments].fields.amount_total
+              )}`;
+              cell3.className = "table_cell_5rows amount";
+              var cell4 = newRow.insertCell(3);
+              //cell4.innerHTML = payments[indexRowPayments].fields.status;
+              if (
+                payments[indexRowPayments].fields.status == "Scheduled" &&
+                dataAirtable.fields.payment_type == "Personal" &&
+                payments[indexRowPayments].fields.cobranza == "Cobrar"
+              ) {
+                cell4.innerHTML = "¡Clic para Pagar!";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Scheduled" &&
+                dataAirtable.fields.payment_type == "Personal" &&
+                payments[indexRowPayments].fields.cobranza != "Cobrar"
+              ) {
+                cell4.innerHTML = "Clic para adelantar pago";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Scheduled" &&
+                dataAirtable.fields.payment_type != "Personal"
+              ) {
+                cell4.innerHTML = "Programado";
+              }
+              if (payments[indexRowPayments].fields.status == "Paid") {
+                cell4.innerHTML = "Pagado";
+              }
+              if (payments[indexRowPayments].fields.status == "Paid late") {
+                cell4.innerHTML = "Pagado tarde";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Delayed" &&
+                dataAirtable.fields.payment_type != "Nomina"
+              ) {
+                cell4.innerHTML = "Atrasado - PAGAR aquí";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Delayed" &&
+                dataAirtable.fields.payment_type == "Nomina"
+              ) {
+                cell4.innerHTML = "Atrasado";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Por revisar" ||
+                payments[indexRowPayments].fields.status == "Error en datos" ||
+                payments[indexRowPayments].fields.status == "No coincide" ||
+                payments[indexRowPayments].fields.status == "Error en monto"
+              ) {
+                cell4.innerHTML = "En revisión";
+              }
+              if (payments[indexRowPayments].fields.status == "Refinanciado") {
+                cell4.innerHTML = "Refinanciado";
+              }
+              if (payments[indexRowPayments].fields.status == "Canceled") {
+                cell4.innerHTML = "Cancelado";
+              }
+              cell4.className = "table_cell_5rows status";
+              var cell5 = newRow.insertCell(4);
+              if (
+                payments[indexRowPayments].fields.status == "Scheduled" &&
+                payments[indexRowPayments].fields.cobranza != "Cobrar"
+              ) {
+                cell5.className = "table_cell_status_pending";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Scheduled" &&
+                payments[indexRowPayments].fields.cobranza == "Cobrar"
+              ) {
+                cell5.className = "table_cell_status_delayed";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Paid" ||
+                payments[indexRowPayments].fields.status == "Paid late" ||
+                payments[indexRowPayments].fields.status == "Refinanciado" ||
+                payments[indexRowPayments].fields.status == "Canceled"
+              ) {
+                cell5.className = "table_cell_status_ready";
+              }
+              if (payments[indexRowPayments].fields.status == "Delayed") {
+                cell5.className = "table_cell_status_delayed";
+              }
+              if (
+                payments[indexRowPayments].fields.status == "Por revisar" ||
+                payments[indexRowPayments].fields.status == "Error en datos" ||
+                payments[indexRowPayments].fields.status == "No coincide" ||
+                payments[indexRowPayments].fields.status == "Error en monto"
+              ) {
+                cell5.className = "table_cell_status_por_revisar";
+              }
+            }
+
+            //FUNCIÓN DE DECLARACIÓN JURADA:
+            let affidavit_text = "";
+            let affidavit_text_upper = "";
+            document.getElementById("affidavit_text").onchange = function () {
+              affidavit_text =
+                document.getElementById("affidavit_text").value + "";
+              //console.log("affidavit_text: ",affidavit_text);
+              affidavit_text_upper = affidavit_text.toUpperCase();
+              //console.log("affidavit_text_upper: ",affidavit_text_upper);
+              if (affidavit_text_upper == "ACEPTO") {
+                document.getElementById("affidavit").value = "ACEPTO";
+                document.getElementById("affidavit_error").style.display =
+                  "none";
+              } else {
+                document.getElementById("affidavit").value = "";
+                document.getElementById("affidavit_error").style.display =
+                  "block";
+              }
+            };
+
+            //V1.14: FUNCIONALIDADES PARA VER DETALLE DE CADA FILA DE LA TABLA
+            const table = $("#table_payments");
+            table.on("click", "tr", async function () {
+              //Get the index of the clicked row (starting from 0)
+              //var clickedRowIndex = $(this).index();
+              //console.log("Clicked row number:", clickedRowIndex);
+              //Get the Loan internal ID from text
+              var firstCell = $(this).find("td:eq(0)");
+              var paymentID = firstCell.text();
+              //console.log("Text in first cell in this row:", paymentID);
+
+              //Filter Payments
+              //console.log("Payments:", payments);
+              var filteredPayment = payments.filter((record) => {
+                return record.fields.name === paymentID;
+              });
+              //console.log("Filtered payment:", filteredPayment);
+
+              //V1.14: Condicionales para mostrar tipo de pago
+              if (
+                filteredPayment[0].fields.status == "Scheduled" ||
+                filteredPayment[0].fields.status == "Delayed"
+              ) {
+                document.getElementById("section-cobranza").style.display =
+                  "flex";
+              } else {
+                document.getElementById("section-cobranza").style.display =
+                  "none";
+              }
+              switch (filteredPayment[0].fields.payment_type[0]) {
+                case "Nomina":
+                  document.getElementById("warning-pay-nomina").style.display =
+                    "flex";
+                  document.getElementById(
+                    "form-pay-personal-titulo"
+                  ).style.display = "none";
+                  document.getElementById("form-pay-personal").style.display =
+                    "none";
+                  document.getElementById(
+                    "warning-pay-domiciliado"
+                  ).style.display = "none";
+                  break;
+                case "Personal":
+                  document.getElementById("warning-pay-nomina").style.display =
+                    "none";
+                  document.getElementById(
+                    "form-pay-personal-titulo"
+                  ).style.display = "flex";
+                  document.getElementById("form-pay-personal").style.display =
+                    "flex";
+                  document.getElementById(
+                    "warning-pay-domiciliado"
+                  ).style.display = "none";
+                  break;
+                case "Domiciliado":
+                  document.getElementById("warning-pay-nomina").style.display =
+                    "none";
+                  document.getElementById(
+                    "form-pay-personal-titulo"
+                  ).style.display = "flex";
+                  document.getElementById("form-pay-personal").style.display =
+                    "flex";
+                  document.getElementById(
+                    "warning-pay-domiciliado"
+                  ).style.display = "none";
+                  break;
+                default:
+                  document.getElementById("warning-pay-nomina").style.display =
+                    "none";
+                  document.getElementById(
+                    "form-pay-personal-titulo"
+                  ).style.display = "none";
+                  document.getElementById("form-pay-personal").style.display =
+                    "none";
+                  document.getElementById(
+                    "warning-pay-domiciliado"
+                  ).style.display = "none";
+                  break;
+              }
+
+              //DATOS GENERALES DEL PAGO:
+              $(`#data-payment-id`).html(filteredPayment[0].fields.name);
+              $(`#data-payment-cuota`).html(filteredPayment[0].fields.cuota);
+              document.getElementById("payment-id").value =
+                filteredPayment[0].id;
+              $(`#data-payment-amount`).html(
+                roundTwo(Number(filteredPayment[0].fields.amount))
+              );
+              $(`#data-payment-mora`).html(
+                roundTwo(Number(filteredPayment[0].fields.mora))
+              );
+              $(`#data-payment-total`).html(
+                roundTwo(Number(filteredPayment[0].fields.amount_total))
+              );
+              if (filteredPayment[0].fields.mora > 0) {
+                document.getElementById("wrapper-mora").style.display = "flex";
+                document.getElementById("wrapper-total").style.display = "flex";
+              } else {
+                document.getElementById("wrapper-mora").style.display = "none";
+                document.getElementById("wrapper-total").style.display = "none";
+              }
+              //let tasaBCV = Number(91.9165); //Miercoles 07 Mayo 2025
+              const tasaBCV = await getTasaBCV();
+              console.log("Success - Tasa BCV:", tasaBCV);
+              document.getElementById("tasa-bcv").value = tasaBCV;
+              $(`#data-payment-tasa`).html(tasaBCV);
+              $(`#data-payment-bs`).html(
+                roundTwo(
+                  tasaBCV * Number(filteredPayment[0].fields.amount_total)
+                )
+              );
+              $(`#data-payment-deadline`).html(
+                filteredPayment[0].fields.date_formated
+              );
+              switch (filteredPayment[0].fields.status) {
+                case "Scheduled":
+                  document.getElementById("status-scheduled").style.display =
+                    "flex";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "flex";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "flex";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  $(`#data-payment-bs2`).html(
+                    roundTwo(
+                      tasaBCV * Number(filteredPayment[0].fields.amount_total)
+                    )
+                  );
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "none";
+                  document.getElementById("wrapper-metodo").style.display =
+                    "none";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "none";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "flex";
+                  break;
+                case "Por revisar":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "flex";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "none";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Error en datos":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "flex";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "none";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "No coincide":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "flex";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "none";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Error en monto":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "flex";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "none";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Delayed":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "flex";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "flex";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "flex";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  $(`#data-payment-bs2`).html(
+                    roundTwo(
+                      tasaBCV * Number(filteredPayment[0].fields.amount_total)
+                    )
+                  );
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "none";
+                  document.getElementById("wrapper-metodo").style.display =
+                    "none";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "none";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "flex";
+                  break;
+                case "Paid":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "flex";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Refinanciado":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "flex";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Canceled":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "flex";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                case "Paid late":
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "flex";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "flex";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "flex";
+                  document.getElementById("wrapper-date").style.display =
+                    "flex";
+                  $(`#data-payment-date`).html(
+                    filteredPayment[0].fields.date_of_payment_formated
+                  );
+                  document.getElementById("wrapper-metodo").style.display =
+                    "flex";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "flex";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "flex";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "flex";
+                  $(`#data-payment-metodo`).html(
+                    filteredPayment[0].fields.payment_method
+                  );
+                  $(`#data-payment-comprobante`).html(
+                    filteredPayment[0].fields.reference_number
+                  );
+                  $(`#data-payment-tasa-pagado`).html(
+                    filteredPayment[0].fields.tasa_bcv
+                  );
+                  $(`#data-payment-bs-pagado`).html(
+                    filteredPayment[0].fields.amount_bolivares
+                  );
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+                default:
+                  document.getElementById("status-scheduled").style.display =
+                    "none";
+                  document.getElementById("status-por-revisar").style.display =
+                    "none";
+                  document.getElementById("status-delayed").style.display =
+                    "none";
+                  document.getElementById("status-paid").style.display = "none";
+                  document.getElementById("status-paid-late").style.display =
+                    "none";
+                  document.getElementById("wrapper-tasa-bcv").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares").style.display =
+                    "none";
+                  document.getElementById("wrapper-bolivares2").style.display =
+                    "none";
+                  document.getElementById("wrapper-deadline").style.display =
+                    "none";
+                  document.getElementById("wrapper-date").style.display =
+                    "none";
+                  document.getElementById("wrapper-metodo").style.display =
+                    "none";
+                  document.getElementById("wrapper-comprobante").style.display =
+                    "none";
+                  document.getElementById(
+                    "wrapper-tasa-bcv-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "wrapper-bolivares-pagado"
+                  ).style.display = "none";
+                  document.getElementById(
+                    "button-reportar-pago"
+                  ).style.display = "none";
+                  break;
+              }
+              document.getElementById("section-detail").style.display = "flex";
+              document.getElementById("section-detail").style.opacity = "100";
+              document.getElementById("section-all").style.opacity = "0";
+              document.getElementById("section-all").style.display = "none";
+            });
+
+            document
+              .getElementById("button-regresar")
+              .addEventListener("click", function (event) {
+                document.getElementById("section-detail").style.opacity = "0";
+                document.getElementById("section-detail").style.display =
+                  "none";
+                document.getElementById("section-all").style.display = "flex";
+                document.getElementById("section-all").style.opacity = "100";
+                //console.log("BOTÓN: ",regresar);
+              });
+          } else {
+            //NOW DO SOMETHING WITH YOUR EMPTY DATA
+            //6. PRÉSTAMOS EMPTY
+            document.getElementById("loading_payments").style.display = "none";
+            document.getElementById("empty_payments").style.display = "flex";
+            document.getElementById("list_payments").style.display = "none";
+          }
+
+          return dataAirtable;
+        };
+
+        //1.START - Run function to get Employee data:
+        getInfo(dataWebflow.data.airtableid);
+        return;
+      }
+    },
+  ]);
+</script>
