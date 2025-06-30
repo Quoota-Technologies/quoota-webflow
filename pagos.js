@@ -1,12 +1,11 @@
 // global user locator. Use this value to access user data. But remember to check if null first.
 let gUser = null;
+
 function isUserLoaded() {
     return gUser !== null;
 }
 
-const baseUrl = `https://development.payments.quoota.com/api/v1`;
-
-const paymentsToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJBdmlsYSBUZWssIEMuQS4iLCJzdWIiOiJRdW9vdGEgV0VCIGFwcCIsImlhdCI6MTc0OTg0NTkyMX0.81db9XOIpb3QDWDAc_VQ-fch1gufY9vRJcP0t-jxOUE";
+const baseUrl = `https://api.quoota.com/v1`;
 
 
 /* ------------------------ Payments API Integrations ----------------------- */
@@ -26,60 +25,16 @@ function getBankList() {
         .then((response) => response);
 }
 
-// Returns (result, error) object. `error` is a string with the error message if any.
-function requestDebitToken(amount = 0.0, bankCode = "", phoneNumber = "", nationalId = "") {
-    // NOTE: There's a bank_number option, but will skip that implementation for now. 
-    // In the future we can add it if needed.
-    accountType = "phone"
 
-    if (amount < 0 || isNaN(amount)) {
+function payDebit(paymentId = "", bankCode = "", nationalId = "", phone = "", name = "", token = "") {
+    if (paymentId === "") {
+        console.error("paymentId was not provided");
         return {
-            error: "Por favor, ingrese un monto válido.",
+            error: "Error al procesar el pago. Por favor, contacta soporte.",
         }
     }
 
-    if (bankCode === "" || phoneNumber === "" || nationalId === "") {
-        return {
-            error: "Por favor, complete todos los campos requeridos.",
-        }
-    }
-
-    const url = `${baseUrl}/debit/token_request`;
-
-    const body = {
-        amount: amount,
-        payer_bank_code: bankCode,
-        payer_account_type: accountType,
-        payer_account_number: phoneNumber,
-        payer_national_id: nationalId
-    };
-
-    return fetch(url, {
-        method: "POST",
-        headers: {
-            Authorization:
-                `Bearer ${paymentsToken}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-    })
-        .then((res) => res.json())
-        .then((response) => response);
-}
-
-
-
-function payDebit(amount = 0.0, bankCode = "", accountNumber = "", nationalId = "", phone = "", name = "", token = "") {
-    // NOTE: There's a bank_number option, but will skip that implementation for now. 
-    // In the future we can add it if needed.
-    accountType = "phone"
-    if (amount < 0 || isNaN(amount)) {
-        return {
-            error: "Por favor, ingrese un monto válido.",
-        }
-    }
-
-    if (bankCode === "" || accountNumber === "" || nationalId === "" || phone === "" || name === "" || concept === "" || token === "") {
+    if (bankCode === "" || nationalId === "" || phone === "" || name === "" || token === "") {
         return {
             error: "Por favor, complete todos los campos requeridos.",
         }
@@ -87,27 +42,29 @@ function payDebit(amount = 0.0, bankCode = "", accountNumber = "", nationalId = 
 
     const url = `${baseUrl}/payments/debit`;
     const body = {
-        amount: amount,
-        payer_bank_code: bankCode,
-        payer_account_type: accountType,
-        payer_account_number: accountNumber,
-        payer_national_id: nationalId,
-        payer_phone: phone,
-        payer_name: name,
-        payment_concept: concept,
+        paymentId: paymentId,
+        bankCode: bankCode,
+        nationalId: nationalId,
+        phone: phone,
+        name: name,
+        concept: "Pago de Quoota",
         token: token
     };
+
     return fetch(url, {
         method: "POST",
         headers: {
-            Authorization:
-                `Bearer ${paymentsToken}`,
             "Content-Type": "application/json"
         },
         body: JSON.stringify(body)
     })
         .then((res) => res.json())
-        .then((response) => response);
+        .then((response) => {
+            let err = response.error;
+            return err ?
+                { error: `${err.message}: ${err.details}` }
+                : response
+        });
 }
 
 
@@ -168,45 +125,37 @@ function populateBankDropdown(dropdownIds) {
 }
 
 async function onPayDebitSubmitted() {
-    const rawAmount = document.getElementById("data-payment-bs2").textContent;
-    const amount = parseFloat(rawAmount);
-
-    if (isNaN(amount)) {
-        console.error("Could not parse data-payment-bs to float", rawAmount);
-        return { error: "No se pudo procesar el pago. Por favor, contacta soporte." };
-    }
-
+    const paymentId = document.getElementById("payment-id").value;
     const bankCode = document.getElementById("debit-bank").value;
     const nationalIdType = document.getElementById("debit-nid-type").value;
     const nationalIdNumber = document.getElementById("debit-nid-number").value;
     const nationalId = `${nationalIdType}${nationalIdNumber}`;
 
-    const phoneExt = document.getElementById("debit-phone-extention").value;
+    const phoneExt = document.getElementById("debit-phone-extension").value;
     const phoneExtTrimmed = phoneExt.substring(1);
     const phoneNumber = document.getElementById("debit-phone-number").value;
     const phone = `58${phoneExtTrimmed}${phoneNumber}`;
 
     if (!isUserLoaded()) {
         console.error("User data not loaded. Cannot continue with transaction.");
-        return { error: "Ocurrió un error. Por favor, recarga la página." };
+        return { error: "Ocurrió un error. Por favor, recarga la página o contacta a soporte técnico." };
     }
 
     const name = gUser.name;
     const token = document.getElementById("debit-token").value;
 
     try {
-        const response = await payDebit(amount, bankCode, accountNumber, nationalId, phone, name, concept, token);
-
+        const response = await payDebit(paymentId, bankCode, nationalId, phone, name, token);
         if (response.error) {
-            alert(`Error: ${response.error}`);
-            return response;
-        } else {
-            alert(`Pago realizado exitosamente. ID de transacción: ${response.transaction_id}`);
+            console.error("Error processing payment transaction: ", response.error);
             return response;
         }
+
+        console.log(`Pago realizado exitosamente. ID de transacción: ${response.transaction_id}`);
+        return response;
+
     } catch (error) {
         console.error("unknown error processing payment transaction: ", error);
-        alert("Ocurrió un error al procesar el pago. Por favor, inténtelo de nuevo.");
         return { error: "Error inesperado al procesar el pago." };
     }
 }
@@ -220,9 +169,11 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 document.getElementById("debit-continue-button").addEventListener("click", async (event) => {
-    if (!canOpenDebitTokenModal()) {
+    if (canOpenDebitTokenModal() == false) {
         return;
     }
+
+    document.getElementById("loading-dialog").style.display = "none";
     document.getElementById("debit-token-modal").style.display = "flex";
 })
 
@@ -231,12 +182,28 @@ document.getElementById("debit-token-modal-close-button").addEventListener("clic
 })
 
 document.getElementById("debit-token-modal-continue-button").addEventListener("click", async (event) => {
+    event.preventDefault();
 
-    let res = onPayDebitSubmitted()
+    document.getElementById("loading-dialog").style.display = "flex";
+    document.getElementById("debit-token-modal-window").style.display = "none";
+
+    // Hide error message if it was displayed
+    document.getElementById("debit-token-modal-error").style.display = "none";
+    document.getElementById("debit-token-modal-error-message").textContent = "";
+
+    let res = await onPayDebitSubmitted();
     if (res.error) {
-        alert(res.error);
+        // Show error message and update error string
+        document.getElementById("debit-token-modal-window").style.display = "flex";
+        document.getElementById("loading-dialog").style.display = "none";
+
+        document.getElementById("debit-token-modal-error").style.display = "block";
+        document.getElementById("debit-token-modal-error-message").textContent = res.error;
         return;
     }
+
+    document.getElementById("debit-token-modal").style.display = "none";
+    document.getElementById("loading-dialog").style.display = "none";
 
     return;
 })
@@ -252,6 +219,8 @@ window.sa5.push(["userInfoChanged",
     (user) => {
         // Check to verify the custom field data is loaded
         if (user.user_data_loaded.custom_fields) {
+            gUser = user;
+            console.log(user);
             //0. INITIALIZE process with airtable ID
             dataWebflow = user;
             //console.log("1. START - dataWebflow: ",dataWebflow);
@@ -502,8 +471,8 @@ window.sa5.push(["userInfoChanged",
                         // Parte 2: los números restantes
                         let whatsapp_number = whatsapp.slice(5);
                         //console.log("number",whatsapp_number);
-                        $(`#debit-phone-extension`).html(extension);
-                        $(`#debit-phone-number`).html(whatsapp_number);
+                        //$(`#debit-phone-extension`).html(extension);
+                        //$(`#debit-phone-number`).html(whatsapp_number);
                         $(`#c2p-phone-extension`).html(extension);
                         $(`#c2p-phone-number`).html(whatsapp_number);
                         $(`#celular-5`).html(extension);
