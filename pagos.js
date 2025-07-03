@@ -7,6 +7,9 @@ function isUserLoaded() {
 
 const baseUrl = `https://api.quoota.com/v1`;
 
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /* ------------------------ Payments API Integrations ----------------------- */
 
@@ -15,13 +18,7 @@ function getBankList() {
     //1. BANKS - GET array with banks data
     const url = `${baseUrl}/payments/banks`;
 
-    return fetch(url, {
-        method: "GET",
-        headers: {
-            Authorization:
-                `Bearer ${paymentsToken}`,
-        },
-    })
+    return fetch(url, { method: "GET" })
         .then((res) => res.json())
         .then((response) => response.data);
 }
@@ -52,8 +49,6 @@ function requestDebitToken(paymentId = "", bankCode = "", nationalId = "", phone
     return fetch(url, {
         method: "POST",
         headers: {
-            Authorization:
-                `Bearer ${paymentsToken}`,
             "Content-Type": "application/json"
         },
         body: JSON.stringify(body)
@@ -147,8 +142,10 @@ function populateBankDropdown(dropdownIds) {
 
                 banks.forEach((bank) => {
                     const option = document.createElement("option");
-                    option.value = bank.bank_code;
-                    option.textContent = `(${bank.bank_code}) ${bank.bank_name}`;
+                    let bankCode = bank.bankCode;
+                    let bankName = bank.bankName;
+                    option.value = bankCode;
+                    option.textContent = `(${bankCode}) ${bankName}`;
                     dropdown.appendChild(option.cloneNode(true)); // Clona la opción para cada dropdown
                 });
 
@@ -164,7 +161,7 @@ function populateBankDropdown(dropdownIds) {
 async function onDebitTokenRequested() {
     const paymentId = document.getElementById("payment-id").value;
     const bankCode = document.getElementById("debit-bank").value;
-    const nationalIdType = document.getElementById("debit-nid-type").value;
+    const nationalIdType = document.getElementById("debit-nid-type").value.toUpperCase();
     const nationalIdNumber = document.getElementById("debit-nid-number").value;
     const nationalId = `${nationalIdType}${nationalIdNumber}`;
 
@@ -179,11 +176,7 @@ async function onDebitTokenRequested() {
     }
 
     try {
-        const response = await requestDebitToken(paymentId, bankCode, nationalId, phone, token);
-        if (response.error) {
-            return response;
-        }
-
+        const response = await requestDebitToken(paymentId, bankCode, nationalId, phone);
         return response;
     } catch (error) {
         console.error("unknown error processing payment transaction: ", error);
@@ -195,7 +188,7 @@ async function onDebitTokenRequested() {
 async function onPayDebitSubmitted() {
     const paymentId = document.getElementById("payment-id").value;
     const bankCode = document.getElementById("debit-bank").value;
-    const nationalIdType = document.getElementById("debit-nid-type").value;
+    const nationalIdType = document.getElementById("debit-nid-type").value.toUpperCase();
     const nationalIdNumber = document.getElementById("debit-nid-number").value;
     const nationalId = `${nationalIdType}${nationalIdNumber}`;
 
@@ -239,8 +232,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 let onDebitTokenRequestEventListener = async (event) => {
     let response = await onDebitTokenRequested()
-    let tokenSent = response.data.tokenSent;
-    if (tokenSent == true) {
+    let tokenSent = response?.data?.tokenSent;
+    if (tokenSent === true) {
         return;
     }
 
@@ -250,7 +243,8 @@ let onDebitTokenRequestEventListener = async (event) => {
 
     document.getElementById("debit-token-modal-error").style.display = "block";
     if (response.error) {
-        document.getElementById("debit-token-modal-error-message").textContent = response.error;
+        let msg = `Error al enviar el token: ${response.error.details}`;
+        document.getElementById("debit-token-modal-error-message").textContent = msg;
     } else {
         document.getElementById("debit-token-modal-error-message").textContent = "Error al enviar el token. Por favor, inténtalo de nuevo.";
     }
@@ -301,8 +295,17 @@ document.getElementById("debit-token-modal-continue-button").addEventListener("c
         return;
     }
 
-    document.getElementById("debit-token-modal").style.display = "none";
+    document.getElementById("debit-token-modal-buttons-block").style.display = "none";
+    document.getElementById("debit-token-modal-error").style.display = "none";
+    document.getElementById("debit-token-modal-success").style.display = "block";
+    document.getElementById("debit-token-modal-window").style.display = "flex";
     document.getElementById("loading-dialog").style.display = "none";
+
+    // Await about 3 secs before reloading to let user read the success message
+    await delay(3000);
+
+    // Reload page to refresh payment status.
+    location.reload();
 
     return;
 })
