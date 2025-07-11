@@ -1,4 +1,376 @@
 <script>
+  // global user locator. Use this value to access user data. But remember to check if null first.
+  let gUser = null;
+
+  function isUserLoaded() {
+    return gUser !== null;
+  }
+
+  const baseUrl = `https://api.quoota.com/v1`;
+
+  function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /* ------------------------ Payments API Integrations ----------------------- */
+
+  function getBankList() {
+    //1. BANKS - GET array with banks data
+    const url = `${baseUrl}/payments/banks`;
+
+    return fetch(url, { method: "GET" })
+      .then((res) => res.json())
+      .then((response) => response.data.banks);
+  }
+
+  function requestDebitToken(
+    paymentId = "",
+    bankCode = "",
+    nationalId = "",
+    phone = ""
+  ) {
+    if (paymentId === "") {
+      console.error("paymentId was not provided");
+      return {
+        error: "Error al procesar el pago. Por favor, contacta soporte.",
+      };
+    }
+
+    if (bankCode === "" || nationalId === "" || phone === "") {
+      return {
+        error: "Por favor, complete todos los campos requeridos.",
+      };
+    }
+
+    //1. BANKS - GET array with banks data
+    const url = `${baseUrl}/payments/debit/tokenRequest`;
+    const body = {
+      paymentId: paymentId,
+      bankCode: bankCode,
+      nationalId: nationalId,
+      phone: phone,
+    };
+
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+      .then((res) => res.json())
+      .then((response) => response);
+  }
+
+  function payDebit(
+    paymentId = "",
+    bankCode = "",
+    nationalId = "",
+    phone = "",
+    name = "",
+    token = ""
+  ) {
+    if (paymentId === "") {
+      console.error("paymentId was not provided");
+      return {
+        error: "Error al procesar el pago. Por favor, contacta soporte.",
+      };
+    }
+
+    if (
+      bankCode === "" ||
+      nationalId === "" ||
+      phone === "" ||
+      name === "" ||
+      token === ""
+    ) {
+      return {
+        error: "Por favor, complete todos los campos requeridos.",
+      };
+    }
+
+    const url = `${baseUrl}/payments/debit`;
+    const body = {
+      paymentId: paymentId,
+      bankCode: bankCode,
+      nationalId: nationalId,
+      phone: phone,
+      name: name,
+      concept: "Pago de Quoota",
+      token: token,
+    };
+
+    return fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    })
+      .then((res) => res.json())
+      .then((response) => {
+        let err = response.error;
+        return err ? { error: `${err.message}: ${err.details}` } : response;
+      });
+  }
+
+  /* -------------------------------------------------------------------------- */
+
+  /* ---------------------------- Field Validators ---------------------------- */
+
+  function canOpenDebitTokenModal() {
+    const bankCode = document.getElementById("debit-bank").value;
+    const nationalIdType = document.getElementById("debit-nid-type").value;
+    const nationalIdNumber = document.getElementById("debit-nid-number").value;
+
+    const phoneExt = document.getElementById("debit-phone-extension").value;
+    const phoneNumber = document.getElementById("debit-phone-number").value;
+
+    if (
+      bankCode === "none" ||
+      bankCode === "" ||
+      nationalIdType === "none" ||
+      nationalIdType === "" ||
+      nationalIdNumber === "" ||
+      phoneExt === "" ||
+      phoneNumber === ""
+    ) {
+      alert("Por favor, complete todos los campos requeridos.");
+      return false;
+    }
+    return true;
+  }
+
+  /* -------------------------------------------------------------------------- */
+
+  /* -------------------------- Component controllers ------------------------- */
+
+  function populateBankDropdown(dropdownIds) {
+    let dropdowns = [];
+    for (const dropdownId of dropdownIds) {
+      const dropdown = document.getElementById(dropdownId);
+      if (!dropdown || dropdown.dataset.loaded === "true") continue; // Evita recargar
+      dropdown.disabled = true;
+      dropdowns.push(dropdown);
+    }
+
+    getBankList()
+      .then((banks) => {
+        for (let dropdown of dropdowns) {
+          // Limpiar cualquier opción anterior (opcional)
+          dropdown.innerHTML =
+            '<option value="none" disabled selected hidden>Seleccione un banco</option>';
+
+          banks.forEach((bank) => {
+            const option = document.createElement("option");
+            let bankCode = bank.bankCode;
+            let bankName = bank.bankName;
+            option.value = bankCode;
+            option.textContent = `(${bankCode}) ${bankName}`;
+            dropdown.appendChild(option.cloneNode(true)); // Clona la opción para cada dropdown
+          });
+
+          dropdown.dataset.loaded = "true"; // Marcar como ya cargado
+          dropdown.disabled = false; // Habilitar los dropdowns después de cargar
+        }
+      })
+      .catch((error) => {
+        console.error("Error al cargar la lista de bancos:", error);
+      });
+  }
+
+  async function onDebitTokenRequested() {
+    const paymentId = document.getElementById("payment-id").value;
+    const bankCode = document.getElementById("debit-bank").value;
+    const nationalIdType = document
+      .getElementById("debit-nid-type")
+      .value.toUpperCase();
+    const nationalIdNumber = document.getElementById("debit-nid-number").value;
+    const nationalId = `${nationalIdType}${nationalIdNumber}`;
+
+    const phoneExt = document.getElementById("debit-phone-extension").value;
+    const phoneExtTrimmed = phoneExt.substring(1);
+    const phoneNumber = document.getElementById("debit-phone-number").value;
+    const phone = `58${phoneExtTrimmed}${phoneNumber}`;
+
+    if (!isUserLoaded()) {
+      console.error("User data not loaded. Cannot continue with transaction.");
+      return {
+        error:
+          "Ocurrió un error. Por favor, recarga la página o contacta a soporte técnico.",
+      };
+    }
+
+    try {
+      const response = await requestDebitToken(
+        paymentId,
+        bankCode,
+        nationalId,
+        phone
+      );
+      return response;
+    } catch (error) {
+      console.error("unknown error processing payment transaction: ", error);
+      return { error: "Error inesperado al procesar el pago." };
+    }
+  }
+
+  async function onPayDebitSubmitted() {
+    const paymentId = document.getElementById("payment-id").value;
+    const bankCode = document.getElementById("debit-bank").value;
+    const nationalIdType = document
+      .getElementById("debit-nid-type")
+      .value.toUpperCase();
+    const nationalIdNumber = document.getElementById("debit-nid-number").value;
+    const nationalId = `${nationalIdType}${nationalIdNumber}`;
+
+    const phoneExt = document.getElementById("debit-phone-extension").value;
+    const phoneExtTrimmed = phoneExt.substring(1);
+    const phoneNumber = document.getElementById("debit-phone-number").value;
+    const phone = `58${phoneExtTrimmed}${phoneNumber}`;
+
+    if (!isUserLoaded()) {
+      console.error("User data not loaded. Cannot continue with transaction.");
+      return {
+        error:
+          "Ocurrió un error. Por favor, recarga la página o contacta a soporte técnico.",
+      };
+    }
+
+    const name = gUser.name;
+    const token = document.getElementById("debit-token").value;
+
+    try {
+      const response = await payDebit(
+        paymentId,
+        bankCode,
+        nationalId,
+        phone,
+        name,
+        token
+      );
+      if (response.error) {
+        console.error("Error processing payment transaction: ", response.error);
+        return response;
+      }
+
+      console.log(
+        `Pago realizado exitosamente. ID de transacción: ${response.transaction_id}`
+      );
+      return response;
+    } catch (error) {
+      console.error("unknown error processing payment transaction: ", error);
+      return { error: "Error inesperado al procesar el pago." };
+    }
+  }
+
+  /* -------------------------------------------------------------------------- */
+
+  /* ----------------------------- Event listeners ---------------------------- */
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    await populateBankDropdown(["c2p-bank", "debit-bank"]);
+  });
+
+  let onDebitTokenRequestEventListener = async (event) => {
+    let response = await onDebitTokenRequested();
+    let tokenSent = response?.data?.tokenSent;
+    if (tokenSent === true) {
+      return;
+    }
+
+    // Show error message and update error string
+    document.getElementById("debit-token-modal-window").style.display = "flex";
+    document.getElementById("loading-dialog").style.display = "none";
+
+    document.getElementById("debit-token-modal-error").style.display = "block";
+    if (response.error) {
+      let msg = `Error al enviar el token: ${response.error.details}`;
+      document.getElementById("debit-token-modal-error-message").textContent =
+        msg;
+    } else {
+      document.getElementById("debit-token-modal-error-message").textContent =
+        "Error al enviar el token. Por favor, inténtalo de nuevo.";
+    }
+
+    return;
+  };
+
+  document
+    .getElementById("debit-continue-button")
+    .addEventListener("click", async (event) => {
+      if (canOpenDebitTokenModal() == false) {
+        return;
+      }
+
+      document.getElementById("loading-dialog").style.display = "none";
+      document.getElementById("debit-token-modal").style.display = "flex";
+
+      onDebitTokenRequestEventListener(event);
+
+      return;
+    });
+  document
+    .getElementById("debit-token-modal-resend-token-button")
+    .addEventListener("click", async (event) => {
+      onDebitTokenRequestEventListener(event);
+      return;
+    });
+
+  document
+    .getElementById("debit-token-modal-close-button")
+    .addEventListener("click", async (event) => {
+      document.getElementById("debit-token-modal").style.display = "none";
+    });
+
+  document
+    .getElementById("debit-token-modal-continue-button")
+    .addEventListener("click", async (event) => {
+      event.preventDefault();
+
+      document.getElementById("loading-dialog").style.display = "flex";
+      document.getElementById("debit-token-modal-window").style.display =
+        "none";
+
+      // Hide error message if it was displayed
+      document.getElementById("debit-token-modal-error").style.display = "none";
+      document.getElementById("debit-token-modal-error-message").textContent =
+        "";
+
+      let res = await onPayDebitSubmitted();
+      if (res.error) {
+        // Show error message and update error string
+        document.getElementById("debit-token-modal-window").style.display =
+          "flex";
+        document.getElementById("loading-dialog").style.display = "none";
+
+        document.getElementById("debit-token-modal-error").style.display =
+          "block";
+        document.getElementById("debit-token-modal-error-message").textContent =
+          res.error;
+        return;
+      }
+
+      document.getElementById("debit-token-modal-buttons-block").style.display =
+        "none";
+      document.getElementById("debit-token-modal-error").style.display = "none";
+      document.getElementById("debit-token-modal-success").style.display =
+        "block";
+      document.getElementById("debit-token-modal-window").style.display =
+        "flex";
+      document.getElementById("loading-dialog").style.display = "none";
+
+      // Await about 3 secs before reloading to let user read the success message
+      await delay(3000);
+
+      // Reload page to refresh payment status.
+      location.reload();
+
+      return;
+    });
+
+  /* -------------------------------------------------------------------------- */
+
   let dataWebflow;
   //0. WEBFLOW - GET user data
   window.sa5 = window.sa5 || [];
@@ -7,6 +379,8 @@
     (user) => {
       // Check to verify the custom field data is loaded
       if (user.user_data_loaded.custom_fields) {
+        gUser = user;
+        console.log(user);
         //0. INITIALIZE process with airtable ID
         dataWebflow = user;
         //console.log("1. START - dataWebflow: ",dataWebflow);
@@ -95,7 +469,6 @@
           let tasaBCV = 0;
           //console.log('Before - Tasa BCV:',tasaBCV);
           const baseUrl = `https://api.quoota.com/v1/currencies/usd`;
-          //const baseUrl = `https://us-central1-quoota-dev.cloudfunctions.net/api_dev/payments/bcv`
           const res = await fetch(baseUrl, {
             method: "GET",
           });
@@ -105,7 +478,6 @@
           //console.log('función RESPONSE:',tasaBCV);
           //console.log('función TASA:',tasaBCV.data.rate);
           return tasaBCV.data.rate;
-          //return tasaBCV.data.dolar;
         };
 
         //2. AIRTABLE - GET employee data:
@@ -312,25 +684,58 @@
               }
             }
 
+            //v.24 FUNCIÓN PARA PRE-LLENAR DATOS DE PAGO:
+            let whatsapp = dataAirtable.fields.whatsapp;
+            //console.log("whatsapp",whatsapp);
+            // Asegúrate de que el número tenga al menos 5 caracteres (para evitar errores)
+            if (whatsapp.length > 4 && whatsapp.startsWith("58")) {
+              // Parte 1: cambiar "58" por "0" y tomar los siguientes 3 dígitos
+              let extension = "0" + whatsapp.slice(2, 5);
+              //console.log("extension",extension);
+              // Parte 2: los números restantes
+              let whatsapp_number = whatsapp.slice(5);
+              //console.log("number",whatsapp_number);
+              //$(`#debit-phone-extension`).html(extension);
+              //$(`#debit-phone-number`).html(whatsapp_number);
+              $(`#c2p-phone-extension`).html(extension);
+              $(`#c2p-phone-number`).html(whatsapp_number);
+              $(`#celular-5`).html(extension);
+              $(`#celular-6`).html(whatsapp_number);
+            }
+            let cedula = dataAirtable.fields.id_number;
+            //console.log("cedula",cedula);
+            // Asegúrate de que hay un guión para separar letra y número
+            if (cedula.includes("-")) {
+              // Separar por el guión
+              let [letra, numerosConPuntos] = cedula.split("-");
+              //console.log("letra",letra);
+              // Eliminar los puntos del número
+              let numeros = numerosConPuntos.replace(/\./g, "");
+              //console.log("numeros",numeros);
+              $(`#debit-id-letter`).html(letra);
+              $(`#debit-id-number`).html(numeros);
+              $(`#c2p-nid-type`).html(letra);
+              $(`#c2p-nid-number`).html(numeros);
+              $(`#cedula-5`).html(letra);
+              $(`#cedula-6`).html(numeros);
+            }
+
             //FUNCIÓN DE DECLARACIÓN JURADA:
-            let affidavit_text = "";
-            let affidavit_text_upper = "";
-            document.getElementById("affidavit_text").onchange = function () {
-              affidavit_text =
-                document.getElementById("affidavit_text").value + "";
-              //console.log("affidavit_text: ",affidavit_text);
-              affidavit_text_upper = affidavit_text.toUpperCase();
-              //console.log("affidavit_text_upper: ",affidavit_text_upper);
-              if (affidavit_text_upper == "ACEPTO") {
-                document.getElementById("affidavit").value = "ACEPTO";
-                document.getElementById("affidavit_error").style.display =
-                  "none";
-              } else {
-                document.getElementById("affidavit").value = "";
-                document.getElementById("affidavit_error").style.display =
-                  "block";
-              }
-            };
+            //let affidavit_text = "";
+            //let affidavit_text_upper = "";
+            //document.getElementById("affidavit_text").onchange = function () {
+            //    affidavit_text = document.getElementById("affidavit_text").value + "";
+            //console.log("affidavit_text: ",affidavit_text);
+            //    affidavit_text_upper = affidavit_text.toUpperCase();
+            //console.log("affidavit_text_upper: ",affidavit_text_upper);
+            //    if (affidavit_text_upper == "ACEPTO") {
+            //        document.getElementById("affidavit").value = "ACEPTO";
+            //        document.getElementById("affidavit_error").style.display = "none";
+            //    } else {
+            //        document.getElementById("affidavit").value = "";
+            //        document.getElementById("affidavit_error").style.display = "block";
+            //    }
+            //};
 
             //V1.14: FUNCIONALIDADES PARA VER DETALLE DE CADA FILA DE LA TABLA
             const table = $("#table_payments");
