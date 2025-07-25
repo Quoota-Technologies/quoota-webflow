@@ -32,16 +32,6 @@
     loadingDialog: () => document.getElementById("loading-dialog"),
     loadingDialogModal: () => document.getElementById("loading-dialog-modal"),
     debitTokenModal: () => document.getElementById("debit-token-modal"),
-    debitTokenModalWindow: () =>
-      document.getElementById("debit-token-modal-window"),
-    debitTokenModalError: () =>
-      document.getElementById("debit-token-modal-error"),
-    debitTokenModalErrorMessage: () =>
-      document.getElementById("debit-token-modal-error-message"),
-    debitTokenModalSuccess: () =>
-      document.getElementById("debit-token-modal-success"),
-    debitTokenModalButtons: () =>
-      document.getElementById("debit-token-modal-buttons-block"),
     debitTokenInput: () => document.getElementById("debit-token"),
     errorDialog: () => document.getElementById("error-dialog"),
     errorDialogMessage: () => document.getElementById("error-dialog-message"),
@@ -58,7 +48,7 @@
       "Ocurrió un error. Por favor, recarga la página o contacta a soporte técnico.",
     UNEXPECTED_ERROR: "Error inesperado al procesar el pago.",
     TOKEN_SEND_ERROR:
-      "Error al enviar el token. Por favor, inténtalo de nuevo.",
+      "No se pudo enviar el token. Revisa que el número de telefono introducido. Si el error persiste, contacta con soporte técnico.",
   };
 
   // ===== Utilidades globales =====
@@ -519,35 +509,22 @@
 
     handleDebitTokenResponse(response) {
       const tokenSent = response?.data?.tokenSent;
-      if (tokenSent === true) return;
+      if (tokenSent === true) {
+        return;
+      }
 
-      // Mostrar modal con error
-      utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
-      utils.showElement(UI_ELEMENTS.debitTokenModalError());
-
-      const errorMessage = response.error
-        ? `Error al enviar el token: ${response.error.details}`
-        : ERROR_MESSAGES.TOKEN_SEND_ERROR;
-
-      UI_ELEMENTS.debitTokenModalErrorMessage().textContent = errorMessage;
+      uiController.showErrorDialog(ERROR_MESSAGES.TOKEN_SEND_ERROR);
+      return;
     },
 
-    handleDebitPaymentSuccess() {
-      utils.hideElement(UI_ELEMENTS.debitTokenModalButtons());
-      utils.hideElement(UI_ELEMENTS.debitTokenModalError());
-      utils.showElement(UI_ELEMENTS.debitTokenModalSuccess());
-      utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
+    handleDebitPaymentSuccess(response) {
+      const successMessage = `Referencia: ${response.data.reference}`;
+      this.showSuccessDialog(successMessage);
     },
 
     handleDebitPaymentError(error) {
-      utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
-      utils.showElement(UI_ELEMENTS.debitTokenModalError());
-      UI_ELEMENTS.debitTokenModalErrorMessage().textContent = error;
-    },
-
-    hideTokenModalError() {
-      utils.hideElement(UI_ELEMENTS.debitTokenModalError());
-      UI_ELEMENTS.debitTokenModalErrorMessage().textContent = "";
+      UI_ELEMENTS.errorDialogMessage().textContent = error;
+      utils.showElement(UI_ELEMENTS.errorDialog());
     },
 
     handlePagoMovilSuccess(response) {
@@ -962,7 +939,10 @@
     },
 
     async handleDebitTokenRequest() {
+      utils.showElement(UI_ELEMENTS.loadingDialogModal());
       const response = await businessController.requestDebitToken();
+      utils.hideElement(UI_ELEMENTS.loadingDialogModal());
+
       uiController.handleDebitTokenResponse(response);
     },
 
@@ -973,8 +953,9 @@
         .addEventListener("click", async (event) => {
           if (!validators.canOpenDebitTokenModal()) return;
 
-          utils.showElement(UI_ELEMENTS.debitTokenModal());
           await this.handleDebitTokenRequest();
+
+          utils.showElement(UI_ELEMENTS.debitTokenModal());
         });
 
       // Botón reenviar token
@@ -1001,22 +982,19 @@
     },
 
     async handleDebitPayment() {
-      utils.hideElement(UI_ELEMENTS.debitTokenModalWindow());
       utils.showElement(UI_ELEMENTS.loadingDialogModal());
-      uiController.hideTokenModalError();
-
       const response = await businessController.processDebitPayment();
+      utils.hideElement(UI_ELEMENTS.loadingDialogModal());
 
       if (response.error) {
         uiController.handleDebitPaymentError(response.error);
         return;
       }
 
-      uiController.handleDebitPaymentSuccess();
-
-      // Esperar 3 segundos antes de recargar
-      await utils.delay(3000);
-      location.reload();
+      if (response.success) {
+        uiController.handleDebitPaymentSuccess(response);
+        return;
+      }
     },
 
     setupDialogs() {
