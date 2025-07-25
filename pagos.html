@@ -41,6 +41,8 @@
       document.getElementById("debit-token-modal-buttons-block"),
     paymentIdInput: () => document.getElementById("payment-id"),
     debitTokenInput: () => document.getElementById("debit-token"),
+    errorDialog: () => document.getElementById("error-dialog"),
+    errorDialogMessage: () => document.getElementById("error-dialog-message"),
   };
 
   const ERROR_MESSAGES = {
@@ -171,6 +173,37 @@
       const data = await response.json();
       return data.data.rate;
     },
+
+    async processPagoMovil(paymentData) {
+      const { paymentId, reference, date, amount } = paymentData;
+
+      if (!paymentId) {
+        console.error("paymentId was not provided");
+        return { error: ERROR_MESSAGES.MISSING_PAYMENT_ID };
+      }
+
+      if (!reference || !date || !amount) {
+        return { error: ERROR_MESSAGES.MISSING_FIELDS };
+      }
+
+      const url = `${CONFIG.API_BASE_URL}/payments/referencedOperation`;
+      const body = { paymentId, reference, date, amount };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const result = await response.json();
+
+      // Si hay error, devolverlo con el mensaje específico para el usuario
+      if (!result.success && result.error) {
+        return { error: result.error.details || result.error.message };
+      }
+
+      return result;
+    },
   };
 
   // ===== Servicios de Airtable =====
@@ -265,7 +298,28 @@
       for (const fieldId of requiredFields) {
         const value = document.getElementById(fieldId).value;
         if (!value || value === "none" || value === "") {
-          alert(ERROR_MESSAGES.MISSING_FIELDS);
+          uiController.showErrorDialog(ERROR_MESSAGES.MISSING_FIELDS);
+          return false;
+        }
+      }
+      return true;
+    },
+
+    canProcessPagoMovil() {
+      const requiredFields = [
+        "pagomovil-date",
+        "pagomovil-phone-extension",
+        "pagomovil-phone-number",
+        "pagomovil-nid-type",
+        "pagomovil-nid-number",
+        "pagomovil-reference",
+        "pagomovil-amount",
+      ];
+
+      for (const fieldId of requiredFields) {
+        const value = document.getElementById(fieldId).value;
+        if (!value || value === "none" || value === "") {
+          uiController.showErrorDialog(ERROR_MESSAGES.MISSING_FIELDS);
           return false;
         }
       }
@@ -291,6 +345,54 @@
       const phone = `${CONFIG.PHONE_PREFIX}${phoneExtTrimmed}${phoneNumber}`;
 
       return { paymentId, bankCode, nationalId, phone };
+    },
+
+    getPagoMovilFormData() {
+      const paymentId = UI_ELEMENTS.paymentIdInput().value;
+      const reference = document.getElementById("pagomovil-reference").value;
+      const rawDate = document.getElementById("pagomovil-date").value;
+      const rawAmount = document.getElementById("pagomovil-amount").value;
+
+      // Parsear fecha al formato dd-mm-yyyy
+      const date = this.formatDateToDDMMYYYY(rawDate);
+
+      // Truncar a 2 decimales máximo
+      const amount = parseFloat(parseFloat(rawAmount).toFixed(2));
+
+      return { paymentId, reference, date, amount };
+    },
+
+    formatDateToDDMMYYYY(inputDate) {
+      // Si la fecha ya está en formato dd-mm-yyyy, devolverla tal como está
+      if (/^\d{2}-\d{2}-\d{4}$/.test(inputDate)) {
+        return inputDate;
+      }
+
+      // Si la fecha está en formato yyyy-mm-dd (HTML date input), convertirla
+      if (/^\d{4}-\d{2}-\d{2}$/.test(inputDate)) {
+        const [year, month, day] = inputDate.split("-");
+        return `${day}-${month}-${year}`;
+      }
+
+      // Si la fecha está en formato dd/mm/yyyy, convertirla
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(inputDate)) {
+        return inputDate.replace(/\//g, "-");
+      }
+
+      // Si no coincide con ningún formato esperado, intentar parsear como Date
+      try {
+        const dateObj = new Date(inputDate);
+        if (isNaN(dateObj.getTime())) {
+          throw new Error("Invalid date");
+        }
+        const day = String(dateObj.getDate()).padStart(2, "0");
+        const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+        const year = dateObj.getFullYear();
+        return `${day}-${month}-${year}`;
+      } catch (error) {
+        console.error("Error parsing date:", inputDate);
+        return inputDate; // Devolver la fecha original si no se puede parsear
+      }
     },
   };
 
@@ -340,6 +442,31 @@
         return response;
       } catch (error) {
         console.error("unknown error processing payment transaction: ", error);
+        return { error: ERROR_MESSAGES.UNEXPECTED_ERROR };
+      }
+    },
+
+    async processPagoMovilPayment() {
+      if (!utils.isUserLoaded()) {
+        console.error(
+          "User data not loaded. Cannot continue with transaction."
+        );
+        return { error: ERROR_MESSAGES.USER_NOT_LOADED };
+      }
+
+      try {
+        const formData = formDataProcessor.getPagoMovilFormData();
+        const response = await apiService.processPagoMovil(formData);
+
+        if (response.success) {
+          console.log(
+            `Pago Móvil procesado exitosamente. Referencia: ${response.data.reference}`
+          );
+        }
+
+        return response;
+      } catch (error) {
+        console.error("unknown error processing pagomovil payment: ", error);
         return { error: ERROR_MESSAGES.UNEXPECTED_ERROR };
       }
     },
@@ -418,6 +545,34 @@
       utils.hideElement(UI_ELEMENTS.debitTokenModalError());
       UI_ELEMENTS.debitTokenModalErrorMessage().textContent = "";
     },
+
+    handlePagoMovilSuccess(response) {
+      // Mostrar mensaje de éxito
+      alert(
+        `¡Pago procesado exitosamente!\nReferencia: ${response.data.reference}\nMonto pagado: $${response.data.amount_paid}`
+      );
+
+      // Recargar la página después de 2 segundos para mostrar el estado actualizado
+      setTimeout(() => {
+        location.reload();
+      }, 2000);
+    },
+
+    handlePagoMovilError(error) {
+      // Mostrar el error específico del servidor usando el modal
+      UI_ELEMENTS.errorDialogMessage().textContent = error;
+      utils.showElement(UI_ELEMENTS.errorDialog());
+    },
+
+    showErrorDialog(message) {
+      UI_ELEMENTS.errorDialogMessage().textContent = message;
+      utils.showElement(UI_ELEMENTS.errorDialog());
+    },
+
+    hideErrorDialog() {
+      utils.hideElement(UI_ELEMENTS.errorDialog());
+      UI_ELEMENTS.errorDialogMessage().textContent = "";
+    },
   };
 </script>
 
@@ -474,39 +629,35 @@
 
       const table = document.getElementById("table_payments");
 
-      // Limpiar filas existentes (excepto header)
-      while (table.rows.length > 1) {
-        table.deleteRow(1);
-      }
-
       payments.forEach((payment, index) => {
-        const row = table.insertRow(index + 1);
+        // Usar la misma lógica del código original: index + 1 para insertar después del header
+        let row = table.insertRow(index + 1);
         row.className = "table_row_long";
 
         // Nombre del pago
-        const nameCell = row.insertCell(0);
+        let nameCell = row.insertCell(0);
         nameCell.innerHTML = payment.fields.name;
         nameCell.className = "table_cell_5rows full";
 
         // Fecha
-        const dateCell = row.insertCell(1);
+        let dateCell = row.insertCell(1);
         dateCell.innerHTML = payment.fields.date_formated;
         dateCell.className = "table_cell_5rows date";
 
         // Monto
-        const amountCell = row.insertCell(2);
+        let amountCell = row.insertCell(2);
         amountCell.innerHTML = `$${utils.roundTwo(
           payment.fields.amount_total
         )}`;
         amountCell.className = "table_cell_5rows amount";
 
         // Status
-        const statusCell = row.insertCell(3);
+        let statusCell = row.insertCell(3);
         statusCell.innerHTML = this.getPaymentStatusText(payment, employeeData);
         statusCell.className = "table_cell_5rows status";
 
         // Indicador visual
-        const indicatorCell = row.insertCell(4);
+        let indicatorCell = row.insertCell(4);
         indicatorCell.className = this.getPaymentStatusClass(payment);
       });
     },
@@ -779,6 +930,8 @@
     init() {
       this.setupDOMContentLoaded();
       this.setupDebitTokenEvents();
+      this.setupPagoMovilEvents();
+      this.setupErrorDialog();
       this.setupPaymentTableEvents();
       this.setupBackButton();
     },
@@ -846,6 +999,44 @@
       // Esperar 3 segundos antes de recargar
       await utils.delay(3000);
       location.reload();
+    },
+
+    setupErrorDialog() {
+      // Botón cerrar modal de error
+      document
+        .getElementById("error-dialog-close-button")
+        .addEventListener("click", (event) => {
+          uiController.hideErrorDialog();
+        });
+    },
+
+    setupPagoMovilEvents() {
+      // Botón enviar pago móvil
+      document
+        .getElementById("pagomovil-submit-button")
+        .addEventListener("click", async (event) => {
+          event.preventDefault();
+          await this.handlePagoMovilPayment();
+        });
+    },
+
+    async handlePagoMovilPayment() {
+      if (!validators.canProcessPagoMovil()) return;
+
+      utils.showElement(UI_ELEMENTS.loadingDialog());
+
+      const response = await businessController.processPagoMovilPayment();
+
+      utils.hideElement(UI_ELEMENTS.loadingDialog());
+
+      if (response.error) {
+        uiController.handlePagoMovilError(response.error);
+        return;
+      }
+
+      if (response.success) {
+        uiController.handlePagoMovilSuccess(response);
+      }
     },
 
     setupPaymentTableEvents() {
