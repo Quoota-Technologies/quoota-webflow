@@ -1122,3 +1122,5 @@ window.sa5.push([
     await dataController.initializeUserData(user);
   },
 ]);
+
+console.log("✅ Script de pagos cargado y ejecutado");
