@@ -2,6 +2,8 @@
 <script>
   // ===== Variables globales =====
   let gUser = null;
+  let gCurrentPaymentId = null;
+  let gCurrentExchangeRate = null;
 
   // ===== Constantes =====
   const CONFIG = {
@@ -28,6 +30,7 @@
 
   const UI_ELEMENTS = {
     loadingDialog: () => document.getElementById("loading-dialog"),
+    loadingDialogModal: () => document.getElementById("loading-dialog-modal"),
     debitTokenModal: () => document.getElementById("debit-token-modal"),
     debitTokenModalWindow: () =>
       document.getElementById("debit-token-modal-window"),
@@ -39,10 +42,12 @@
       document.getElementById("debit-token-modal-success"),
     debitTokenModalButtons: () =>
       document.getElementById("debit-token-modal-buttons-block"),
-    paymentIdInput: () => document.getElementById("payment-id"),
     debitTokenInput: () => document.getElementById("debit-token"),
     errorDialog: () => document.getElementById("error-dialog"),
     errorDialogMessage: () => document.getElementById("error-dialog-message"),
+    successDialog: () => document.getElementById("success-dialog"),
+    successDialogMessage: () =>
+      document.getElementById("success-dialog-message"),
   };
 
   const ERROR_MESSAGES = {
@@ -330,7 +335,8 @@
   // ===== Procesadores de datos de formulario =====
   const formDataProcessor = {
     getDebitFormData() {
-      const paymentId = UI_ELEMENTS.paymentIdInput().value;
+      const paymentId = gCurrentPaymentId;
+
       const bankCode = document.getElementById("debit-bank").value;
       const nationalIdType = document
         .getElementById("debit-nid-type")
@@ -348,7 +354,8 @@
     },
 
     getPagoMovilFormData() {
-      const paymentId = UI_ELEMENTS.paymentIdInput().value;
+      const paymentId = gCurrentPaymentId;
+
       const reference = document.getElementById("pagomovil-reference").value;
       const rawDate = document.getElementById("pagomovil-date").value;
       const rawAmount = document.getElementById("pagomovil-amount").value;
@@ -516,7 +523,6 @@
 
       // Mostrar modal con error
       utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
-      utils.hideElement(UI_ELEMENTS.loadingDialog());
       utils.showElement(UI_ELEMENTS.debitTokenModalError());
 
       const errorMessage = response.error
@@ -531,12 +537,10 @@
       utils.hideElement(UI_ELEMENTS.debitTokenModalError());
       utils.showElement(UI_ELEMENTS.debitTokenModalSuccess());
       utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
-      utils.hideElement(UI_ELEMENTS.loadingDialog());
     },
 
     handleDebitPaymentError(error) {
       utils.showElement(UI_ELEMENTS.debitTokenModalWindow());
-      utils.hideElement(UI_ELEMENTS.loadingDialog());
       utils.showElement(UI_ELEMENTS.debitTokenModalError());
       UI_ELEMENTS.debitTokenModalErrorMessage().textContent = error;
     },
@@ -547,15 +551,9 @@
     },
 
     handlePagoMovilSuccess(response) {
-      // Mostrar mensaje de éxito
-      alert(
-        `¡Pago procesado exitosamente!\nReferencia: ${response.data.reference}\nMonto pagado: $${response.data.amount_paid}`
-      );
-
-      // Recargar la página después de 2 segundos para mostrar el estado actualizado
-      setTimeout(() => {
-        location.reload();
-      }, 2000);
+      // Mostrar modal de éxito con la información del pago
+      const successMessage = `Referencia: ${response.data.reference}\nMonto pagado: $${response.data.amount_paid}`;
+      this.showSuccessDialog(successMessage);
     },
 
     handlePagoMovilError(error) {
@@ -572,6 +570,24 @@
     hideErrorDialog() {
       utils.hideElement(UI_ELEMENTS.errorDialog());
       UI_ELEMENTS.errorDialogMessage().textContent = "";
+    },
+
+    showSuccessDialog(message) {
+      UI_ELEMENTS.successDialogMessage().textContent = message;
+      utils.showElement(UI_ELEMENTS.successDialog());
+    },
+
+    hideSuccessDialog() {
+      utils.hideElement(UI_ELEMENTS.successDialog());
+      UI_ELEMENTS.successDialogMessage().textContent = "";
+    },
+
+    showLoadingModal() {
+      utils.showElement(UI_ELEMENTS.loadingDialogModal());
+    },
+
+    hideLoadingModal() {
+      utils.hideElement(UI_ELEMENTS.loadingDialogModal());
     },
   };
 </script>
@@ -725,10 +741,14 @@
   // ===== Manejador de detalles de pago =====
   const paymentDetailHandler = {
     async showPaymentDetail(payment, exchangeRate) {
+      // Guardar valores en variables globales
+      gCurrentPaymentId = payment.id;
+      gCurrentExchangeRate = exchangeRate;
+
       // Actualizar datos generales
       utils.setElementHTML(`#data-payment-id`, payment.fields.name);
       utils.setElementHTML(`#data-payment-cuota`, payment.fields.cuota);
-      document.getElementById("payment-id").value = payment.id;
+
       utils.setElementHTML(
         `#data-payment-amount`,
         utils.roundTwo(Number(payment.fields.amount))
@@ -755,11 +775,10 @@
         utils.hideElement(document.getElementById("wrapper-total"));
       }
 
-      // Configurar tasa BCV
-      document.getElementById("tasa-bcv").value = exchangeRate;
-      utils.setElementHTML(`#data-payment-tasa`, exchangeRate);
+      // Configurar tasa BCV usando variable global
+      utils.setElementHTML(`#data-payment-tasa`, gCurrentExchangeRate);
       const totalInBs = utils.roundTwo(
-        exchangeRate * Number(payment.fields.amount_total)
+        gCurrentExchangeRate * Number(payment.fields.amount_total)
       );
       utils.setElementHTML(`#data-payment-bs`, totalInBs);
       utils.setElementHTML(`#data-payment-bs2`, totalInBs);
@@ -931,7 +950,7 @@
       this.setupDOMContentLoaded();
       this.setupDebitTokenEvents();
       this.setupPagoMovilEvents();
-      this.setupErrorDialog();
+      this.setupDialogs();
       this.setupPaymentTableEvents();
       this.setupBackButton();
     },
@@ -954,7 +973,6 @@
         .addEventListener("click", async (event) => {
           if (!validators.canOpenDebitTokenModal()) return;
 
-          utils.hideElement(UI_ELEMENTS.loadingDialog());
           utils.showElement(UI_ELEMENTS.debitTokenModal());
           await this.handleDebitTokenRequest();
         });
@@ -983,8 +1001,8 @@
     },
 
     async handleDebitPayment() {
-      utils.showElement(UI_ELEMENTS.loadingDialog());
       utils.hideElement(UI_ELEMENTS.debitTokenModalWindow());
+      utils.showElement(UI_ELEMENTS.loadingDialogModal());
       uiController.hideTokenModalError();
 
       const response = await businessController.processDebitPayment();
@@ -1001,12 +1019,21 @@
       location.reload();
     },
 
-    setupErrorDialog() {
+    setupDialogs() {
       // Botón cerrar modal de error
       document
         .getElementById("error-dialog-close-button")
         .addEventListener("click", (event) => {
           uiController.hideErrorDialog();
+        });
+
+      // Botón cerrar modal de éxito
+      document
+        .getElementById("success-dialog-close-button")
+        .addEventListener("click", (event) => {
+          uiController.hideSuccessDialog();
+          // Recargar la página para mostrar el estado actualizado
+          location.reload();
         });
     },
 
@@ -1023,11 +1050,11 @@
     async handlePagoMovilPayment() {
       if (!validators.canProcessPagoMovil()) return;
 
-      utils.showElement(UI_ELEMENTS.loadingDialog());
+      uiController.showLoadingModal();
 
       const response = await businessController.processPagoMovilPayment();
 
-      utils.hideElement(UI_ELEMENTS.loadingDialog());
+      uiController.hideLoadingModal();
 
       if (response.error) {
         uiController.handlePagoMovilError(response.error);
