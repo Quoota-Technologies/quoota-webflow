@@ -908,6 +908,7 @@ const paymentDetailHandler = {
 // ===== Event Listeners =====
 const eventListeners = {
   init() {
+    alert("Bienvenido a la sección de pagos. Por favor, asegúrate de que tu usuario esté cargado correctamente.");
     this.setupDOMContentLoaded();
     this.setupDebitTokenEvents();
     this.setupPagoMovilEvents();
